@@ -358,5 +358,194 @@ namespace Test
             Assert.That(range.ToString(), Is.EqualTo("10,100-149,151-200,500-5000"));
 
         }
+
+        [TestCase("100-150", 90UL, 120UL, "121-150")]
+        [TestCase("100-150", 100UL, 120UL, "121-150")]
+        [TestCase("100-150", 120UL, 200UL, "100-119")]
+        [TestCase("100-150", 120UL, 150UL, "100-119")]
+        [TestCase("100-150", 120UL, 130UL, "100-119,131-150")]
+        [TestCase("100-150", 100UL, 150UL, "")]
+        [TestCase("100-150", 0UL, 99UL, "100-150")]
+        [TestCase("100-150", 151UL, 200UL, "100-150")]
+        [TestCase("100-150,200-250,300-350", 120UL, 320UL, "100-119,321-350")]
+        [TestCase("100-150,200-250,300-350", 90UL, 360UL, "")]
+        [TestCase("100-150,200-250,300-350", 150UL, 300UL, "100-149,301-350")]
+        [TestCase("0-100", 0UL, 10UL, "11-100")]
+        [TestCase("0-18446744073709551615", 10UL, 18446744073709551615UL, "0-9")]
+        [TestCase("0-18446744073709551615", 0UL, 18446744073709551614UL, "18446744073709551615")]
+        [TestCase("0-18446744073709551615", 1UL, 18446744073709551614UL, "0,18446744073709551615")]
+        public void RemovePartialOverlap(string initial, ulong startValue, ulong endValue, string expected)
+        {
+            var range = NumericRange.Parse(initial);
+            range.Remove(startValue, endValue);
+            Assert.That(range.ToString(), Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void AddMergesAdjacentRangeOnTheRight()
+        {
+            var range = new NumericRange();
+            range.Add(21, 30);
+            range.Add(10, 20);
+            Assert.That(range.ToString(), Is.EqualTo("10-30"));
+
+            range = NumericRange.Parse("10-20,22-30");
+            range.Add(21);
+            Assert.That(range.ToString(), Is.EqualTo("10-30"));
+        }
+
+        [Test]
+        public void ReadmeExample()
+        {
+            var range = NumericRange.Parse("40-70,90,95,300-700,702,5000");
+            range.Add(701);
+            Assert.That(range.ToString(), Is.EqualTo("40-70,90,95,300-702,5000"));
+            range.Add(1000, 2000);
+            Assert.That(range.ToString(), Is.EqualTo("40-70,90,95,300-702,1000-2000,5000"));
+            range.Remove(80, 100);
+            Assert.That(range.ToString(), Is.EqualTo("40-70,300-702,1000-2000,5000"));
+            range.Remove(1500);
+            Assert.That(range.ToString(), Is.EqualTo("40-70,300-702,1000-1499,1501-2000,5000"));
+            Assert.That(range.Contains(500), Is.True);
+            Assert.That(range.Contains(800), Is.False);
+        }
+
+        [Test]
+        public void AddInsideRangeEndingAtMaxValue()
+        {
+            var range = new NumericRange();
+            range.Add(0, ulong.MaxValue);
+            range.Add(10);
+            range.Add(ulong.MaxValue);
+            Assert.That(range.ToString(), Is.EqualTo("0-18446744073709551615"));
+
+            range = new NumericRange();
+            range.Add(5, ulong.MaxValue);
+            range.Add(0, 4);
+            Assert.That(range.ToString(), Is.EqualTo("0-18446744073709551615"));
+        }
+
+        [Test]
+        public void ReversedRangeIsRejected()
+        {
+            var range = new NumericRange();
+            Assert.Throws<ArgumentOutOfRangeException>(() => range.Add(20, 10));
+            Assert.Throws<ArgumentOutOfRangeException>(() => range.Remove(20, 10));
+            Assert.Throws<ArgumentException>(() => NumericRange.Parse("70-40"));
+            Assert.That(range.ToString(), Is.EqualTo(""));
+        }
+
+        [TestCase("18446744073709551616")]
+        [TestCase("1-18446744073709551616")]
+        [TestCase("\u0663")]
+        [TestCase("10, 20")]
+        public void ParseRejectsInvalidInput(string value)
+        {
+            Assert.Throws<ArgumentException>(() => NumericRange.Parse(value));
+        }
+
+        [Test]
+        public void ParseMaxValue()
+        {
+            Assert.That(NumericRange.Parse("18446744073709551615").ToString(), Is.EqualTo("18446744073709551615"));
+        }
+
+        [Test]
+        public void NullArgumentsAreRejected()
+        {
+            var range = new NumericRange();
+            Assert.Throws<ArgumentNullException>(() => range.Add((NumericRange)null!));
+            Assert.Throws<ArgumentNullException>(() => range.Remove((NumericRange)null!));
+            Assert.Throws<ArgumentNullException>(() => NumericRange.Parse(null!));
+        }
+
+        [Test]
+        public void AddAndRemoveSelf()
+        {
+            var range = NumericRange.Parse("1-5,10");
+            range.Add(range);
+            Assert.That(range.ToString(), Is.EqualTo("1-5,10"));
+
+            range.Remove(range);
+            Assert.That(range.ToString(), Is.EqualTo(""));
+        }
+
+        [Test]
+        public void ValuesAtMaxValue()
+        {
+            var range = new NumericRange();
+            range.Add(ulong.MaxValue - 2, ulong.MaxValue);
+            Assert.That(range.Values().Take(10).ToArray(), Is.EqualTo(new[] { ulong.MaxValue - 2, ulong.MaxValue - 1, ulong.MaxValue }));
+        }
+
+        // Applies random adds and removes over a small domain and checks the result against a plain set of values.
+        [Test]
+        public void RandomOperationsMatchModel()
+        {
+            const int domainSize = 64;
+            var random = new Random(20241023);
+
+            for (var iteration = 0; iteration < 300; iteration++)
+            {
+                var range = new NumericRange();
+                var model = new SortedSet<ulong>();
+                var history = new List<string>();
+
+                for (var operation = 0; operation < 40; operation++)
+                {
+                    var first = (ulong)random.Next(domainSize);
+                    var second = (ulong)random.Next(domainSize);
+                    var startValue = Math.Min(first, second);
+                    var endValue = Math.Max(first, second);
+                    var isAdd = random.Next(2) == 0;
+
+                    if (isAdd)
+                        range.Add(startValue, endValue);
+                    else
+                        range.Remove(startValue, endValue);
+
+                    for (var value = startValue; value <= endValue; value++)
+                        if (isAdd)
+                            model.Add(value);
+                        else
+                            model.Remove(value);
+
+                    history.Add($"{(isAdd ? "Add" : "Remove")}({startValue},{endValue})");
+                    var context = string.Join(" ", history);
+
+                    Assert.That(range.ToString(), Is.EqualTo(ToRangeString(model)), context);
+                    Assert.That(range.Values().ToArray(), Is.EqualTo(model.ToArray()), context);
+                    var allValues = Enumerable.Range(0, domainSize + 1).Select(value => (ulong)value).ToArray();
+                    Assert.That(allValues.Where(range.Contains).ToArray(), Is.EqualTo(model.ToArray()), $"Contains() after {context}");
+                }
+            }
+        }
+
+        private static string ToRangeString(SortedSet<ulong> values)
+        {
+            var ranges = new List<string>();
+            ulong? startValue = null;
+            ulong previousValue = 0;
+
+            foreach (var value in values)
+            {
+                if (startValue != null && value == previousValue + 1)
+                {
+                    previousValue = value;
+                    continue;
+                }
+
+                if (startValue != null)
+                    ranges.Add(startValue == previousValue ? $"{startValue}" : $"{startValue}-{previousValue}");
+
+                startValue = value;
+                previousValue = value;
+            }
+
+            if (startValue != null)
+                ranges.Add(startValue == previousValue ? $"{startValue}" : $"{startValue}-{previousValue}");
+
+            return string.Join(",", ranges);
+        }
     }
 }

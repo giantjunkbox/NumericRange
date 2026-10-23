@@ -16,6 +16,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -23,7 +24,7 @@ namespace Bitvantage;
 
 public class NumericRange
 {
-    private static readonly Regex RangeRegex = new(@"^((((?<start>\d+)((-(?<end>\d+))|(?<end>)))(,|$))*)$", RegexOptions.ExplicitCapture | RegexOptions.Compiled);
+    private static readonly Regex RangeRegex = new(@"^((((?<start>[0-9]+)((-(?<end>[0-9]+))|(?<end>)))(,|$))*)$", RegexOptions.ExplicitCapture | RegexOptions.Compiled);
 
     private readonly SortedSet<ValueRange> _values = new();
 
@@ -35,59 +36,65 @@ public class NumericRange
     // TODO: overwrite add, and subtract?
     public void Add(ulong startValue, ulong endValue)
     {
+        ValidateRange(startValue, endValue);
+
         var removeList = new List<ValueRange>();
+        var mergedStartValue = startValue;
+        var mergedEndValue = endValue;
 
-
-        // 10-20, 25, 27-30, 33-53
-
-        // merge any partial values into the beginning
-        // for example adding 21-23 should become 10-23, 25 ,27-30, 33-53
-        var previousValues = _values.GetViewBetween(new ValueRange(0), startValue > 0 ? new ValueRange(startValue - 1) : ValueRange.Min);
-        var previousValuesMax = previousValues.Max;
-
-
-        if (previousValuesMax.IsSet && startValue <= previousValuesMax.EndValue + 1 && previousValuesMax.StartValue < endValue)
+        // merge the range that starts before the new range if it overlaps or touches it
+        // for example adding 21-23 to 10-20,25 should become 10-23,25
+        if (startValue > 0)
         {
-            if (previousValuesMax.StartValue < startValue)
-                startValue = previousValuesMax.StartValue;
-
-            if (previousValuesMax.EndValue > endValue)
-                endValue = previousValuesMax.EndValue;
-
-            removeList.Add(previousValuesMax);
+            var previousRange = _values.GetViewBetween(ValueRange.Min, new ValueRange(startValue - 1)).Max;
+            if (previousRange.IsSet && previousRange.EndValue >= startValue - 1)
+            {
+                mergedStartValue = previousRange.StartValue;
+                mergedEndValue = Math.Max(mergedEndValue, previousRange.EndValue);
+                removeList.Add(previousRange);
+            }
         }
 
-
-        var nextValues = _values.GetViewBetween(startValue > 0 ? new ValueRange(startValue - 1) : ValueRange.Min, ValueRange.Max);
-
-        // consolidate overlapped values
-        // for example adding 25-40 should become 10-20, 25-53
-        var enumerator = nextValues.GetEnumerator();
-        while (enumerator.MoveNext() && enumerator.Current.StartValue <= endValue)
+        // merge every range that starts inside the new range or immediately after it
+        // for example adding 25-40 to 10-20,25,27-30,33-53 should become 10-20,25-53
+        foreach (var nextRange in _values.GetViewBetween(new ValueRange(startValue), ValueRange.Max))
         {
-            if (enumerator.Current.EndValue > endValue)
-                endValue = enumerator.Current.EndValue;
+            if (mergedEndValue != ulong.MaxValue && nextRange.StartValue > mergedEndValue + 1)
+                break;
 
-            removeList.Add(enumerator.Current);
+            mergedEndValue = Math.Max(mergedEndValue, nextRange.EndValue);
+            removeList.Add(nextRange);
         }
-
-        enumerator.Dispose();
-
 
         foreach (var valueRange in removeList)
             _values.Remove(valueRange);
 
-        _values.Add(new ValueRange(startValue, endValue));
+        _values.Add(new ValueRange(mergedStartValue, mergedEndValue));
     }
 
     public void Add(NumericRange numericRange)
     {
+        ArgumentNullException.ThrowIfNull(numericRange);
+
+        // adding a range to itself changes nothing, and enumerating our own set while modifying it would throw
+        if (ReferenceEquals(numericRange, this))
+            return;
+
         foreach (var range in numericRange._values)
             Add(range.StartValue, range.EndValue);
     }
 
     public void Remove(NumericRange numericRange)
     {
+        ArgumentNullException.ThrowIfNull(numericRange);
+
+        // removing a range from itself empties it, and enumerating our own set while modifying it would throw
+        if (ReferenceEquals(numericRange, this))
+        {
+            Clear();
+            return;
+        }
+
         foreach (var range in numericRange._values)
             Remove(range.StartValue, range.EndValue);
     }
@@ -118,6 +125,8 @@ public class NumericRange
 
     public static NumericRange Parse(string value)
     {
+        ArgumentNullException.ThrowIfNull(value);
+
         var match = RangeRegex.Match(value);
 
         if (!match.Success)
@@ -127,14 +136,18 @@ public class NumericRange
 
         for (var i = 0; i < match.Groups["start"].Captures.Count; i++)
         {
-            var startValue = ulong.Parse(match.Groups["start"].Captures[i].Value);
-
-            ulong endValue;
+            var startValueString = match.Groups["start"].Captures[i].Value;
             var endValueString = match.Groups["end"].Captures[i].Value;
-            if (endValueString == string.Empty)
-                endValue = startValue;
-            else
-                endValue = ulong.Parse(endValueString);
+
+            if (!ulong.TryParse(startValueString, NumberStyles.None, CultureInfo.InvariantCulture, out var startValue))
+                throw new ArgumentException($"The value {startValueString} is too large", nameof(value));
+
+            var endValue = startValue;
+            if (endValueString != string.Empty && !ulong.TryParse(endValueString, NumberStyles.None, CultureInfo.InvariantCulture, out endValue))
+                throw new ArgumentException($"The value {endValueString} is too large", nameof(value));
+
+            if (startValue > endValue)
+                throw new ArgumentException($"The range {startValueString}-{endValueString} ends before it starts", nameof(value));
 
             range.Add(startValue, endValue);
         }
@@ -149,71 +162,45 @@ public class NumericRange
 
     public void Remove(ulong startValue, ulong endValue)
     {
-        var removeList = new List<ValueRange>();
-        var addList = new List<ValueRange>();
+        ValidateRange(startValue, endValue);
 
-        // get the ValueRange range at or before this one starts
-        // Example: 10-100, 110-120
-        // if we want to remove 115, we need to get the value range 110-120
-        var lowerMaxValueRange = _values.GetViewBetween(ValueRange.Min, new ValueRange(startValue)).Max;
+        var overlappingRanges = new List<ValueRange>();
 
-        var upperValueRanges = _values.GetViewBetween(new ValueRange(startValue), ValueRange.Max);
-
-        ValueRange[] previousValueRange;
-        if (lowerMaxValueRange.IsSet && lowerMaxValueRange != upperValueRanges.Min && lowerMaxValueRange.EndValue >= startValue)
-            previousValueRange = new[] { lowerMaxValueRange };
-        else
-            previousValueRange = new ValueRange[] { };
-
-        foreach (var currentRange in previousValueRange.Concat(upperValueRanges))
+        // the range that starts before the removal range can still overlap it
+        // Range:  10-100, 110-120
+        // Remove: 115-200
+        // the range 110-120 starts before 115 but overlaps it
+        if (startValue > 0)
         {
-            // the current range is completely contained in the removal range, remove the current range 
-            // Range:  100-150,1000
-            // Remove: 0-999
-            // Result: 1000
-            if (currentRange.StartValue >= startValue && currentRange.EndValue <= endValue)
-                removeList.Add(currentRange);
-
-            // the removal range is in between the current range, remove the current range and add two shoulder ranges
-            // Range:  100-150
-            // Remove: 125
-            // Result: 100-124,126-150
-            else if (currentRange.StartValue > startValue && currentRange.EndValue < endValue)
-            {
-                removeList.Add(currentRange);
-                addList.Add(new ValueRange(currentRange.StartValue, startValue - 1));
-                addList.Add(new ValueRange(endValue + 1, currentRange.EndValue));
-            }
-
-            // the removal range overlaps the left side of the current range and is contained by the right side, remove the current range and add two shoulder ranges
-            // Range:  100-150
-            // Remove: 90-120
-            // Result: 121-150
-            else if (currentRange.StartValue < startValue && currentRange.EndValue >= startValue)
-            {
-                removeList.Add(currentRange);
-                addList.Add(new ValueRange(currentRange.StartValue, endValue - 1));
-                addList.Add(new ValueRange(endValue + 1, currentRange.EndValue));
-            }
-
-            // the removal range is contained by the left side and overlaps the right side of the current range , remove the current range and add two shoulder ranges
-            // Range:  100-150
-            // Remove: 120-200
-            // Result: 100-119
-            else if (currentRange.StartValue >= startValue && currentRange.EndValue < endValue)
-            {
-                removeList.Add(currentRange);
-                addList.Add(new ValueRange(currentRange.EndValue + 1, endValue));
-            }
-            else
-                break;
+            var previousRange = _values.GetViewBetween(ValueRange.Min, new ValueRange(startValue - 1)).Max;
+            if (previousRange.IsSet && previousRange.EndValue >= startValue)
+                overlappingRanges.Add(previousRange);
         }
 
-        foreach (var range in removeList)
+        // every range that starts inside the removal range overlaps it
+        overlappingRanges.AddRange(_values.GetViewBetween(new ValueRange(startValue), new ValueRange(endValue)));
+
+        // remove each overlapping range and add back whatever sticks out on either side of the removal range
+        // Range:  100-150   Remove: 90-120    Result: 121-150
+        // Range:  100-150   Remove: 120-200   Result: 100-119
+        // Range:  100-150   Remove: 125       Result: 100-124,126-150
+        // Range:  100-150   Remove: 0-999     Result: (empty)
+        foreach (var range in overlappingRanges)
+        {
             _values.Remove(range);
 
-        foreach (var range in addList)
-            _values.Add(range);
+            if (range.StartValue < startValue)
+                _values.Add(new ValueRange(range.StartValue, startValue - 1));
+
+            if (range.EndValue > endValue)
+                _values.Add(new ValueRange(endValue + 1, range.EndValue));
+        }
+    }
+
+    private static void ValidateRange(ulong startValue, ulong endValue)
+    {
+        if (startValue > endValue)
+            throw new ArgumentOutOfRangeException(nameof(endValue), endValue, $"The end value must be greater than or equal to the start value {startValue}");
     }
 
     public override string ToString()
@@ -239,8 +226,19 @@ public class NumericRange
     public IEnumerable<ulong> Values()
     {
         foreach (var value in _values)
-            for (var i = value.StartValue; i <= value.EndValue; i++)
+        {
+            // stop at the end value explicitly, because incrementing past ulong.MaxValue wraps around to 0
+            var i = value.StartValue;
+            while (true)
+            {
                 yield return i;
+
+                if (i == value.EndValue)
+                    break;
+
+                i++;
+            }
+        }
     }
 
     public IEnumerable<string> Ranges()
