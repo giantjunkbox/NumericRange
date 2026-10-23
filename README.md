@@ -97,6 +97,11 @@ var settings = configuration.GetSection("Firewall").Get<FirewallSettings>();	// 
 JsonSerializer.Serialize(settings.AllowedPorts);								// "22,80,443,8000-8100"
 ```
 
+## Native AOT and debugging
+The library is declared compatible with Native AOT and trimming, and builds with the AOT and trim analyzers turned on. In an AOT app, serialize with a source-generated `JsonSerializerContext` as usual; the JSON converter is picked up automatically.
+
+Packages include Source Link and a `.snupkg` symbol package, so debuggers can step into the exact source of the version you are using.
+
 ## Thread safety
 `NumericRange` is not thread-safe. Changing a set while enumerating it throws `InvalidOperationException`.
 

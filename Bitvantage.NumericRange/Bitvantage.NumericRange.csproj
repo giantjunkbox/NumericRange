@@ -24,6 +24,27 @@
 
   </PropertyGroup>
 
+  <!-- Native AOT and trimming -->
+  <PropertyGroup>
+	  <!-- Declares the library safe for Native AOT and trimming. Turns on the AOT, trim and single-file analyzers,
+	       so code that would break in an AOT app fails the build, and marks the assembly as trimmable. -->
+	  <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <!-- Source Link, so debuggers can step into the exact source of a published package -->
+  <PropertyGroup>
+	  <!-- The .NET SDK includes Source Link for GitHub, so no package reference is needed. It records the commit and the
+	       git remote of the build in the PDB, and in the package's repository metadata. -->
+	  <PublishRepositoryUrl>true</PublishRepositoryUrl>
+	  <!-- Embeds generated files such as global usings in the PDB, because they are not in the repository. -->
+	  <EmbedUntrackedSources>true</EmbedUntrackedSources>
+	  <!-- Publishes the PDB as a .snupkg symbol package next to the .nupkg; nuget.org serves it to debuggers. -->
+	  <IncludeSymbols>true</IncludeSymbols>
+	  <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+	  <!-- Makes CI builds reproducible by removing local paths from the binaries. Left off locally so local debugging keeps full paths. -->
+	  <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' Or '$(TF_BUILD)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
 	<ItemGroup>
 		<None Include="../README.md" Pack="true" PackagePath="" />
 		<None Include="../icon.png" Pack="true" PackagePath="" />
