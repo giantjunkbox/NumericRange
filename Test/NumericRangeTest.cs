@@ -431,17 +431,27 @@ namespace Test
             var range = new NumericRange();
             Assert.Throws<ArgumentOutOfRangeException>(() => range.Add(20, 10));
             Assert.Throws<ArgumentOutOfRangeException>(() => range.Remove(20, 10));
-            Assert.Throws<ArgumentException>(() => NumericRange.Parse("70-40"));
+            Assert.Throws<FormatException>(() => NumericRange.Parse("70-40"));
             Assert.That(range.ToString(), Is.EqualTo(""));
         }
 
         [TestCase("18446744073709551616")]
         [TestCase("1-18446744073709551616")]
         [TestCase("\u0663")]
-        [TestCase("10, 20")]
+        [TestCase("10 20")]
+        [TestCase("1,")]
+        [TestCase(",1")]
+        [TestCase("1,,2")]
+        [TestCase("1-")]
+        [TestCase("-1")]
+        [TestCase("1-2-3")]
+        [TestCase("a")]
+        [TestCase("1;2")]
         public void ParseRejectsInvalidInput(string value)
         {
-            Assert.Throws<ArgumentException>(() => NumericRange.Parse(value));
+            Assert.Throws<FormatException>(() => NumericRange.Parse(value));
+            Assert.That(NumericRange.TryParse(value, out var result), Is.False);
+            Assert.That(result, Is.Null);
         }
 
         [Test]
@@ -583,39 +593,12 @@ namespace Test
                     history.Add($"{(isAdd ? "Add" : "Remove")}({startValue},{endValue})");
                     var context = string.Join(" ", history);
 
-                    Assert.That(range.ToString(), Is.EqualTo(ToRangeString(model)), context);
+                    Assert.That(range.ToString(), Is.EqualTo(RangeModel.ToRangeString(model)), context);
                     Assert.That(range.Values().ToArray(), Is.EqualTo(model.ToArray()), context);
                     var allValues = Enumerable.Range(0, domainSize + 1).Select(value => (ulong)value).ToArray();
                     Assert.That(allValues.Where(range.Contains).ToArray(), Is.EqualTo(model.ToArray()), $"Contains() after {context}");
                 }
             }
-        }
-
-        private static string ToRangeString(SortedSet<ulong> values)
-        {
-            var ranges = new List<string>();
-            ulong? startValue = null;
-            ulong previousValue = 0;
-
-            foreach (var value in values)
-            {
-                if (startValue != null && value == previousValue + 1)
-                {
-                    previousValue = value;
-                    continue;
-                }
-
-                if (startValue != null)
-                    ranges.Add(startValue == previousValue ? $"{startValue}" : $"{startValue}-{previousValue}");
-
-                startValue = value;
-                previousValue = value;
-            }
-
-            if (startValue != null)
-                ranges.Add(startValue == previousValue ? $"{startValue}" : $"{startValue}-{previousValue}");
-
-            return string.Join(",", ranges);
         }
     }
 }

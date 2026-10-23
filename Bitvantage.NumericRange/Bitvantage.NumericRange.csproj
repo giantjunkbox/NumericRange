@@ -20,7 +20,7 @@
 	  <Description>Parse and manipulate huge lists of numeric ranges such as 40-70,90,95,300-700,5000</Description>
 	  <Copyright>Copyright © Michael Crino 2024</Copyright>
 	  <RepositoryUrl>https://github.com/Bitvantage/NumericRange.git</RepositoryUrl>
-	  <Copyright>Copyright © Michael Crino 2024</Copyright>
+	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
   </PropertyGroup>
 
