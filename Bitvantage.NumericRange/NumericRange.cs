@@ -278,16 +278,6 @@ public class NumericRange
             return $"{StartValue}-{EndValue}";
         }
 
-        public static bool operator ==(ValueRange first, ValueRange second)
-        {
-            return first.StartValue == second.StartValue && first.EndValue == second.EndValue && first.IsSet == second.IsSet;
-        }
-
-        public static bool operator !=(ValueRange first, ValueRange second)
-        {
-            return !(first == second);
-        }
-
         public int CompareTo(ValueRange other)
         {
             return StartValue.CompareTo(other.StartValue);
