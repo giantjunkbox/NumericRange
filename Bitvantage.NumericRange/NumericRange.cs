@@ -26,7 +26,17 @@ public class NumericRange
 {
     private static readonly Regex RangeRegex = new(@"^((((?<start>[0-9]+)((-(?<end>[0-9]+))|(?<end>)))(,|$))*)$", RegexOptions.ExplicitCapture | RegexOptions.Compiled);
 
-    private readonly SortedSet<ValueRange> _values = new();
+    private readonly SortedSet<ValueRange> _values;
+
+    public NumericRange()
+    {
+        _values = new SortedSet<ValueRange>();
+    }
+
+    private NumericRange(NumericRange numericRange)
+    {
+        _values = new SortedSet<ValueRange>(numericRange._values);
+    }
 
     public void Add(ulong value)
     {
@@ -117,10 +127,38 @@ public class NumericRange
         return previousValueMax.StartValue <= value && value <= previousValueMax.EndValue;
     }
 
+    // returns a new range that also contains the value, leaving the original range unchanged
     public static NumericRange operator +(NumericRange numericRange, ulong value)
     {
-        numericRange.Add(value);
-        return numericRange;
+        ArgumentNullException.ThrowIfNull(numericRange);
+
+        var result = new NumericRange(numericRange);
+        result.Add(value);
+        return result;
+    }
+
+    // adds the value to this range in place, without copying it
+    // callers compiled with C# 13 or earlier fall back to x = x + value, which copies
+    public void operator +=(ulong value)
+    {
+        Add(value);
+    }
+
+    // returns a new range without the value, leaving the original range unchanged
+    public static NumericRange operator -(NumericRange numericRange, ulong value)
+    {
+        ArgumentNullException.ThrowIfNull(numericRange);
+
+        var result = new NumericRange(numericRange);
+        result.Remove(value);
+        return result;
+    }
+
+    // removes the value from this range in place, without copying it
+    // callers compiled with C# 13 or earlier fall back to x = x - value, which copies
+    public void operator -=(ulong value)
+    {
+        Remove(value);
     }
 
     public static NumericRange Parse(string value)
@@ -216,12 +254,6 @@ public class NumericRange
 
         return sb.ToString();
     }
-
-    //public static NumericRange operator -(NumericRange numericRange, ulong value)
-    //{
-    //    numericRange.Remove(value);
-    //    return numericRange;
-    //}
 
     public IEnumerable<ulong> Values()
     {

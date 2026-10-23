@@ -460,6 +460,76 @@ namespace Test
         }
 
         [Test]
+        public void PlusReturnsNewRange()
+        {
+            var range = NumericRange.Parse("1-5");
+            var result = range + 10;
+
+            Assert.That(result, Is.Not.SameAs(range));
+            Assert.That(result.ToString(), Is.EqualTo("1-5,10"));
+            Assert.That(range.ToString(), Is.EqualTo("1-5"));
+
+            // the copy and the original do not share state afterwards
+            result.Add(20);
+            range.Add(30);
+            Assert.That(result.ToString(), Is.EqualTo("1-5,10,20"));
+            Assert.That(range.ToString(), Is.EqualTo("1-5,30"));
+        }
+
+        [Test]
+        public void MinusReturnsNewRange()
+        {
+            var range = NumericRange.Parse("1-10");
+            var result = range - 5;
+
+            Assert.That(result, Is.Not.SameAs(range));
+            Assert.That(result.ToString(), Is.EqualTo("1-4,6-10"));
+            Assert.That(range.ToString(), Is.EqualTo("1-10"));
+        }
+
+        [Test]
+        public void ChainedOperatorsLeaveOriginalUnchanged()
+        {
+            var range = NumericRange.Parse("1-10");
+            var result = range + 20 - 5;
+
+            Assert.That(result.ToString(), Is.EqualTo("1-4,6-10,20"));
+            Assert.That(range.ToString(), Is.EqualTo("1-10"));
+        }
+
+        [Test]
+        public void PlusEqualsChangesRangeInPlace()
+        {
+            var range = NumericRange.Parse("1-5");
+            var alias = range;
+
+            range += 6;
+
+            Assert.That(range, Is.SameAs(alias));
+            Assert.That(alias.ToString(), Is.EqualTo("1-6"));
+        }
+
+        [Test]
+        public void MinusEqualsChangesRangeInPlace()
+        {
+            var range = NumericRange.Parse("1-10");
+            var alias = range;
+
+            range -= 5;
+
+            Assert.That(range, Is.SameAs(alias));
+            Assert.That(alias.ToString(), Is.EqualTo("1-4,6-10"));
+        }
+
+        [Test]
+        public void OperatorsRejectNullRange()
+        {
+            NumericRange range = null!;
+            Assert.Throws<ArgumentNullException>(() => _ = range + 5);
+            Assert.Throws<ArgumentNullException>(() => _ = range - 5);
+        }
+
+        [Test]
         public void AddAndRemoveSelf()
         {
             var range = NumericRange.Parse("1-5,10");
