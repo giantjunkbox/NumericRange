@@ -18,7 +18,9 @@
 
 namespace Bitvantage;
 
-// Operations that combine or compare two sets. The method names match ISet<T>, so they read the same as HashSet<T> and SortedSet<T>.
+// Operations that combine or compare two sets.
+// The methods that change this set are named like ISet<T>, as on HashSet<T> and SortedSet<T>: UnionWith, IntersectWith and so on.
+// The methods that return a new set are named like ImmutableHashSet<T>: Union, Intersect, Except and SymmetricExcept.
 public partial class NumericRange
 {
     /// <summary>
@@ -223,6 +225,87 @@ public partial class NumericRange
         ArgumentNullException.ThrowIfNull(other);
 
         return Equals(other);
+    }
+
+    /// <summary>
+    /// Returns a new set that holds every value in this set, in <paramref name="other"/>, or in both.
+    /// Neither set is changed. Same as the <c>|</c> operator.
+    /// </summary>
+    /// <remarks>
+    /// Because this method is defined on the class, <c>a.Union(b)</c> calls it instead of the LINQ extension method with the same name.
+    /// LINQ would treat each range as a single item and compare whole ranges, which gives the wrong values for overlapping ranges.
+    /// </remarks>
+    /// <param name="other">The set to combine with.</param>
+    /// <returns>A new set with the union of both sets.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <see langword="null"/>.</exception>
+    public NumericRange Union(NumericRange other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        // copy the set with more ranges and add the smaller one to it, which needs fewer insertions
+        var (smaller, larger) = OrderByRangeCount(this, other);
+        var result = new NumericRange(larger);
+        result.UnionWith(smaller);
+        return result;
+    }
+
+    /// <summary>
+    /// Returns a new set that holds only the values that are in both this set and <paramref name="other"/>.
+    /// Neither set is changed. Same as the <c>&amp;</c> operator.
+    /// </summary>
+    /// <remarks>
+    /// Because this method is defined on the class, <c>a.Intersect(b)</c> calls it instead of the LINQ extension method with the same name.
+    /// LINQ would treat each range as a single item and compare whole ranges, which gives the wrong values for overlapping ranges.
+    /// </remarks>
+    /// <param name="other">The set to intersect with.</param>
+    /// <returns>A new set with the intersection of both sets.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <see langword="null"/>.</exception>
+    public NumericRange Intersect(NumericRange other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        // build the result from the shared ranges directly instead of copying either set
+        var result = new NumericRange();
+        foreach (var range in IntersectRanges(this, other))
+            result.Store(range);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Returns a new set that holds every value in this set that is not in <paramref name="other"/>.
+    /// Neither set is changed. Same as the <c>-</c> operator with a set on the right.
+    /// </summary>
+    /// <remarks>
+    /// Because this method is defined on the class, <c>a.Except(b)</c> calls it instead of the LINQ extension method with the same name.
+    /// LINQ would treat each range as a single item and compare whole ranges, which gives the wrong values for overlapping ranges.
+    /// </remarks>
+    /// <param name="other">The values to leave out.</param>
+    /// <returns>A new set with the difference of the two sets.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <see langword="null"/>.</exception>
+    public NumericRange Except(NumericRange other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        var result = new NumericRange(this);
+        result.ExceptWith(other);
+        return result;
+    }
+
+    /// <summary>
+    /// Returns a new set that holds the values that are in exactly one of this set and <paramref name="other"/>, but not in both.
+    /// Neither set is changed. Same as the <c>^</c> operator.
+    /// </summary>
+    /// <param name="other">The set to compare with.</param>
+    /// <returns>A new set with the symmetric difference of both sets.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <see langword="null"/>.</exception>
+    public NumericRange SymmetricExcept(NumericRange other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        var result = new NumericRange(this);
+        result.SymmetricExceptWith(other);
+        return result;
     }
 
     // Returns, in ascending order, the ranges of values that both sets hold.

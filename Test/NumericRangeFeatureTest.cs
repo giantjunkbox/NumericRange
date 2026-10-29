@@ -238,18 +238,63 @@ namespace Test
         }
 
         [Test]
-        public void UnionOperatorGroupsLikeSetNotation()
+        public void OperatorsGroupLikeFlagsEnums()
         {
             var a = NumericRange.Parse("1-10");
             var b = NumericRange.Parse("20-30");
             var c = NumericRange.Parse("5-25");
 
-            // & binds tighter than ^, which binds tighter than |, as in set notation and Python
+            // & binds tighter than ^, which binds tighter than |, the same as for flags enums
             Assert.That((a | b & c).ToString(), Is.EqualTo((a | (b & c)).ToString()));
             Assert.That((a | b & c).ToString(), Is.EqualTo("1-10,20-25"));
             Assert.That((a | b ^ c).ToString(), Is.EqualTo((a | (b ^ c)).ToString()));
             Assert.That((a ^ b & c).ToString(), Is.EqualTo((a ^ (b & c)).ToString()));
             Assert.That((a - b & c).ToString(), Is.EqualTo(((a - b) & c).ToString()));
+
+            // the same expression on a flags enum groups the same way
+            Assert.That(Ports.A | Ports.B & Ports.C, Is.EqualTo(Ports.A | (Ports.B & Ports.C)));
+            Assert.That(Ports.A | Ports.B & Ports.C, Is.Not.EqualTo((Ports.A | Ports.B) & Ports.C));
+        }
+
+        [Flags]
+        private enum Ports
+        {
+            A = 1,
+            B = 2,
+            C = 4,
+        }
+
+        [Test]
+        public void NamedSetMethodsReturnNewSets()
+        {
+            var allowed = NumericRange.Parse("22,80,443,8000-8100");
+            var requested = NumericRange.Parse("80,443,3389,8050-8200");
+
+            // declaring the results as NumericRange proves these calls bind to the class's methods;
+            // the LINQ methods with the same names return IEnumerable<ValueRange> and would not compile here
+            NumericRange union = allowed.Union(requested);
+            NumericRange intersection = allowed.Intersect(requested);
+            NumericRange difference = allowed.Except(requested);
+            NumericRange symmetricDifference = allowed.SymmetricExcept(requested);
+
+            Assert.That(union.ToString(), Is.EqualTo("22,80,443,3389,8000-8200"));
+            Assert.That(intersection.ToString(), Is.EqualTo("80,443,8050-8100"));
+            Assert.That(difference.ToString(), Is.EqualTo("22,8000-8049"));
+            Assert.That(symmetricDifference.ToString(), Is.EqualTo("22,3389,8000-8049,8101-8200"));
+
+            Assert.That(union, Is.EqualTo(allowed | requested));
+            Assert.That(intersection, Is.EqualTo(allowed & requested));
+            Assert.That(difference, Is.EqualTo(allowed - requested));
+            Assert.That(symmetricDifference, Is.EqualTo(allowed ^ requested));
+
+            // neither operand changes, and the result is always a new set, even when combining a set with itself
+            Assert.That(allowed.ToString(), Is.EqualTo("22,80,443,8000-8100"));
+            Assert.That(requested.ToString(), Is.EqualTo("80,443,3389,8050-8200"));
+            Assert.That(allowed.Union(allowed), Is.Not.SameAs(allowed));
+            Assert.That(allowed.Union(allowed), Is.EqualTo(allowed));
+            Assert.That(allowed.Intersect(allowed), Is.EqualTo(allowed));
+            Assert.That(allowed.Except(allowed).IsEmpty, Is.True);
+            Assert.That(allowed.SymmetricExcept(allowed).IsEmpty, Is.True);
         }
 
         [Test]
@@ -354,6 +399,10 @@ namespace Test
             Assert.Throws<ArgumentNullException>(() => range.IsProperSubsetOf(missing));
             Assert.Throws<ArgumentNullException>(() => range.IsProperSupersetOf(missing));
             Assert.Throws<ArgumentNullException>(() => range.SetEquals(missing));
+            Assert.Throws<ArgumentNullException>(() => range.Union(missing));
+            Assert.Throws<ArgumentNullException>(() => range.Intersect(missing));
+            Assert.Throws<ArgumentNullException>(() => range.Except(missing));
+            Assert.Throws<ArgumentNullException>(() => range.SymmetricExcept(missing));
             Assert.Throws<ArgumentNullException>(() => _ = range | missing);
             Assert.Throws<ArgumentNullException>(() => _ = missing | range);
             Assert.Throws<ArgumentNullException>(() => _ = ~missing);
@@ -379,12 +428,15 @@ namespace Test
 
             Assert.That(first.Equals(second), Is.True);
             Assert.That(first.Equals((object)second), Is.True);
-            Assert.That(first == second, Is.True);
-            Assert.That(first != different, Is.True);
             Assert.That(first.Equals(different), Is.False);
             Assert.That(first.Equals(missing), Is.False);
+
+            // == and != compare references, as for other mutable classes
+            var alias = first;
+            Assert.That(first == second, Is.False);
+            Assert.That(first == alias, Is.True);
+            Assert.That(first != second, Is.True);
             Assert.That(first == missing, Is.False);
-            Assert.That(missing == null, Is.True);
             Assert.That(first.GetHashCode(), Is.EqualTo(second.GetHashCode()));
             Assert.That(new HashSet<NumericRange> { first, second, different }, Has.Count.EqualTo(2));
 
@@ -595,7 +647,11 @@ namespace Test
                 Assert.That(first.IsProperSubsetOf(second), Is.EqualTo(firstModel.IsProperSubsetOf(secondModel)), context);
                 Assert.That(first.IsProperSupersetOf(second), Is.EqualTo(firstModel.IsProperSupersetOf(secondModel)), context);
                 Assert.That(first.SetEquals(second), Is.EqualTo(firstModel.SetEquals(secondModel)), context);
-                Assert.That(first == second, Is.EqualTo(firstModel.SetEquals(secondModel)), context);
+                Assert.That(first.Equals(second), Is.EqualTo(firstModel.SetEquals(secondModel)), context);
+                Assert.That(first.Union(second), Is.EqualTo(first | second), context);
+                Assert.That(first.Intersect(second), Is.EqualTo(first & second), context);
+                Assert.That(first.Except(second), Is.EqualTo(first - second), context);
+                Assert.That(first.SymmetricExcept(second), Is.EqualTo(first ^ second), context);
 
                 Assert.That(first.ValueCount, Is.EqualTo((UInt128)firstModel.Count), context);
                 Assert.That(first.Min, Is.EqualTo(firstModel.Count == 0 ? null : firstModel.Min), context);

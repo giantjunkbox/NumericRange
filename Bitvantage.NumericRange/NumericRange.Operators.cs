@@ -19,13 +19,19 @@
 namespace Bitvantage;
 
 // Binary and unary operators (+, -, &, |, ^, ~) return a new set and never change their operands.
+// The set operators call the named methods Union, Intersect, Except, SymmetricExcept and Complement,
+// so languages without operator overloading can use the same operations.
 // Compound assignment operators (+=, -=, &=, |=, ^=) use the C# 14 instance operator syntax and change the set in place,
 // so x += 5 costs the same as x.Add(5). Code compiled with C# 13 or earlier, or written in another .NET language,
 // treats x += 5 as x = x + 5 instead, which gives the same result by copying the set.
 //
-// Two sets are combined with | rather than +. C# ranks & above ^ above |, the same order as set notation and Python,
-// so a | b & c means a | (b & c). C# ranks + above &, so a + b & c would mean (a + b) & c, which surprises readers.
-// + and += are kept for adding a single value or a ValueRange, where precedence does not matter.
+// The set operators are the ones C# uses for flags enums, with the same meanings and the same grouping:
+// & binds tighter than ^, which binds tighter than |, so a | b & c means a | (b & c).
+// Two sets are combined with | rather than +, because C# ranks + above &, so a + b & c would mean (a + b) & c.
+// + and += add a single value or a ValueRange, and - and -= remove them, the way += and -= add and remove event handlers.
+//
+// == and != are deliberately not overloaded. NumericRange is a mutable class, and C# developers expect == on a class
+// to compare references. Use Equals or SetEquals to compare values.
 public partial class NumericRange
 {
     /// <summary>
@@ -86,6 +92,7 @@ public partial class NumericRange
 
     /// <summary>
     /// Returns a new set that holds every value in <paramref name="left"/> that is not in <paramref name="right"/>.
+    /// Same as <see cref="Except"/>.
     /// </summary>
     /// <param name="left">The set to copy. It is not changed.</param>
     /// <param name="right">The values to leave out. It is not changed.</param>
@@ -93,15 +100,14 @@ public partial class NumericRange
     /// <exception cref="ArgumentNullException"><paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     public static NumericRange operator -(NumericRange left, NumericRange right)
     {
-        ArgumentNullException.ThrowIfNull(right);
+        ArgumentNullException.ThrowIfNull(left);
 
-        var result = new NumericRange(left);
-        result.ExceptWith(right);
-        return result;
+        return left.Except(right);
     }
 
     /// <summary>
     /// Returns a new set that holds only the values that are in both <paramref name="left"/> and <paramref name="right"/>.
+    /// Same as <see cref="Intersect"/>.
     /// </summary>
     /// <param name="left">The first set. It is not changed.</param>
     /// <param name="right">The second set. It is not changed.</param>
@@ -110,21 +116,16 @@ public partial class NumericRange
     public static NumericRange operator &(NumericRange left, NumericRange right)
     {
         ArgumentNullException.ThrowIfNull(left);
-        ArgumentNullException.ThrowIfNull(right);
 
-        // build the result from the shared ranges directly instead of copying either set
-        var result = new NumericRange();
-        foreach (var range in IntersectRanges(left, right))
-            result.Store(range);
-
-        return result;
+        return left.Intersect(right);
     }
 
     /// <summary>
     /// Returns a new set that holds every value in either <paramref name="left"/> or <paramref name="right"/>.
+    /// Same as <see cref="Union"/>.
     /// </summary>
     /// <remarks>
-    /// Like set notation, <c>|</c> binds more loosely than <c>&amp;</c> and <c>^</c>, so <c>a | b &amp; c</c> means <c>a | (b &amp; c)</c>.
+    /// As with flags enums, <c>|</c> binds more loosely than <c>&amp;</c> and <c>^</c>, so <c>a | b &amp; c</c> means <c>a | (b &amp; c)</c>.
     /// </remarks>
     /// <param name="left">The first set. It is not changed.</param>
     /// <param name="right">The second set. It is not changed.</param>
@@ -133,17 +134,13 @@ public partial class NumericRange
     public static NumericRange operator |(NumericRange left, NumericRange right)
     {
         ArgumentNullException.ThrowIfNull(left);
-        ArgumentNullException.ThrowIfNull(right);
 
-        // copy the set with more ranges and add the smaller one to it, which needs fewer insertions
-        var (smaller, larger) = OrderByRangeCount(left, right);
-        var result = new NumericRange(larger);
-        result.UnionWith(smaller);
-        return result;
+        return left.Union(right);
     }
 
     /// <summary>
     /// Returns a new set that holds the values that are in exactly one of <paramref name="left"/> and <paramref name="right"/>, but not in both.
+    /// Same as <see cref="SymmetricExcept"/>.
     /// </summary>
     /// <param name="left">The first set. It is not changed.</param>
     /// <param name="right">The second set. It is not changed.</param>
@@ -151,11 +148,9 @@ public partial class NumericRange
     /// <exception cref="ArgumentNullException"><paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
     public static NumericRange operator ^(NumericRange left, NumericRange right)
     {
-        ArgumentNullException.ThrowIfNull(right);
+        ArgumentNullException.ThrowIfNull(left);
 
-        var result = new NumericRange(left);
-        result.SymmetricExceptWith(right);
-        return result;
+        return left.SymmetricExcept(right);
     }
 
     /// <summary>
@@ -246,27 +241,5 @@ public partial class NumericRange
     public void operator ^=(NumericRange numericRange)
     {
         SymmetricExceptWith(numericRange);
-    }
-
-    /// <summary>
-    /// Returns whether two sets hold exactly the same values. Two <see langword="null"/> references are equal.
-    /// </summary>
-    /// <param name="left">The first set.</param>
-    /// <param name="right">The second set.</param>
-    /// <returns><see langword="true"/> if both sets hold the same values, or both are <see langword="null"/>.</returns>
-    public static bool operator ==(NumericRange? left, NumericRange? right)
-    {
-        return left is null ? right is null : left.Equals(right);
-    }
-
-    /// <summary>
-    /// Returns whether two sets hold different values.
-    /// </summary>
-    /// <param name="left">The first set.</param>
-    /// <param name="right">The second set.</param>
-    /// <returns><see langword="true"/> if the sets hold different values, or only one is <see langword="null"/>.</returns>
-    public static bool operator !=(NumericRange? left, NumericRange? right)
-    {
-        return !(left == right);
     }
 }

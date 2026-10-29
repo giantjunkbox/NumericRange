@@ -41,6 +41,12 @@ namespace Bitvantage;
 /// The <c>+</c>, <c>-</c>, <c>&amp;</c>, <c>|</c>, <c>^</c> and <c>~</c> operators return a new set and leave their operands unchanged.
 /// The <c>+=</c>, <c>-=</c>, <c>&amp;=</c>, <c>|=</c> and <c>^=</c> operators change the set in place.
 /// Combine two sets with <c>|</c>; <c>+</c> and <c>+=</c> add a single value or a <see cref="ValueRange"/>.
+/// The set operators have named equivalents that also return a new set: <see cref="Union"/>, <see cref="Intersect"/>,
+/// <see cref="Except"/>, <see cref="SymmetricExcept"/> and <see cref="Complement()"/>.
+/// </para>
+/// <para>
+/// <see cref="Equals(NumericRange)"/> and <see cref="SetEquals"/> compare values.
+/// <c>==</c> and <c>!=</c> compare references, as for other classes.
 /// </para>
 /// <para>
 /// This class is not thread-safe. Changing a set while enumerating it throws <see cref="InvalidOperationException"/>.

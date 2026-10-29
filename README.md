@@ -43,31 +43,39 @@ range.Values();							// 40, 41, 42, ... check ValueCount before materializing t
 ```
 
 ## Set operations
-Two sets can be combined and compared with the same method names as `HashSet<T>`, or with operators.
+Two sets can be combined and compared with methods named like `ImmutableHashSet<T>` and `HashSet<T>`, or with operators.
 ```csharp
 var allowed = NumericRange.Parse("22,80,443,8000-8100");
 var requested = NumericRange.Parse("80,443,3389,8050-8200");
 
-var granted = allowed & requested;		// 80,443,8050-8100
-var denied = requested - allowed;		// 3389,8101-8200
-var either = allowed | requested;		// 22,80,443,3389,8000-8200
-var onlyOne = allowed ^ requested;		// 22,3389,8000-8049,8101-8200
-var unprivileged = ~NumericRange.Parse("0-1023");	// 1024-18446744073709551615
+var granted = allowed.Intersect(requested);			// 80,443,8050-8100			same as allowed & requested
+var denied = requested.Except(allowed);				// 3389,8101-8200			same as requested - allowed
+var either = allowed.Union(requested);				// 22,80,443,3389,8000-8200	same as allowed | requested
+var onlyOne = allowed.SymmetricExcept(requested);	// 22,3389,8000-8049,8101-8200	same as allowed ^ requested
+var unprivileged = NumericRange.Parse("0-1023").Complement();	// 1024-18446744073709551615	same as ~NumericRange.Parse("0-1023")
 
 allowed.Overlaps(requested);			// true
 requested.IsSubsetOf(allowed);			// false
-allowed.SetEquals(allowed.Clone());		// true
-allowed == NumericRange.Parse("8000-8100,443,80,22");	// true, sets compare by value
+allowed.SetEquals(NumericRange.Parse("8000-8100,443,80,22"));	// true
 
 var used = NumericRange.Parse("1024-1030,1032");
 used.Complement(1024, 65535).Min;		// 1031, the first free port at or above 1024
 ```
-`UnionWith`, `IntersectWith`, `ExceptWith` and `SymmetricExceptWith` change the set in place.
+`Union`, `Intersect`, `Except` and `SymmetricExcept` return a new set and leave both sets unchanged. They are called instead of the LINQ methods with the same names, which would compare whole ranges instead of values. `UnionWith`, `IntersectWith`, `ExceptWith` and `SymmetricExceptWith` change the set in place.
 
-As in set notation and Python, `&` binds tighter than `^`, which binds tighter than `|`, so `a | b & c` means `a | (b & c)`. Difference binds tighter than all three, so `a - b & c` means `(a - b) & c`. Add parentheses whenever the grouping is not obvious.
+The operators group the same way they do for flags enums. `&` binds tighter than `^`, which binds tighter than `|`, so `a | b & c` means `a | (b & c)`. Subtraction binds tighter than all three, so `a - b & c` means `(a - b) & c`. Add parentheses whenever the grouping is not obvious.
+
+## Equality
+`Equals` and `SetEquals` compare values, and `GetHashCode` is based on the values, so sets work as dictionary keys. `==` and `!=` compare references, as they do for other classes.
+```csharp
+var first = NumericRange.Parse("1-5,10");
+var second = NumericRange.Parse("10,1-5");
+first.Equals(second);					// true
+first == second;						// false, they are different objects
+```
 
 ## Operators
-`+`, `-`, `&`, `|`, `^` and `~` return a new set and leave their operands unchanged. `+=`, `-=`, `&=`, `|=` and `^=` change the set in place without copying it. `+` adds a value or a `ValueRange`, `|` combines two sets, and `-` removes a value, a `ValueRange` or another set.
+`+`, `-`, `&`, `|`, `^` and `~` return a new set and leave their operands unchanged. `+=`, `-=`, `&=`, `|=` and `^=` change the set in place without copying it. `+` adds a value or a `ValueRange`, `|` combines two sets, and `-` removes a value, a `ValueRange` or another set. `+=` and `-=` read the same way they do for adding and removing event handlers.
 ```csharp
 var ports = NumericRange.Parse("80,443");
 var withAdmin = ports + 8443;			// ports: 80,443		withAdmin: 80,443,8443
