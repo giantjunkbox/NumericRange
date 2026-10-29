@@ -38,8 +38,9 @@ namespace Bitvantage;
 /// because a single range can hold up to 2^64 values.
 /// </para>
 /// <para>
-/// The <c>+</c>, <c>-</c>, <c>&amp;</c> and <c>^</c> operators return a new set and leave their operands unchanged.
-/// The <c>+=</c>, <c>-=</c>, <c>&amp;=</c> and <c>^=</c> operators change the set in place.
+/// The <c>+</c>, <c>-</c>, <c>&amp;</c>, <c>|</c>, <c>^</c> and <c>~</c> operators return a new set and leave their operands unchanged.
+/// The <c>+=</c>, <c>-=</c>, <c>&amp;=</c>, <c>|=</c> and <c>^=</c> operators change the set in place.
+/// Combine two sets with <c>|</c>; <c>+</c> and <c>+=</c> add a single value or a <see cref="ValueRange"/>.
 /// </para>
 /// <para>
 /// This class is not thread-safe. Changing a set while enumerating it throws <see cref="InvalidOperationException"/>.

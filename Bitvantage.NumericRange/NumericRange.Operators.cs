@@ -18,10 +18,14 @@
 
 namespace Bitvantage;
 
-// Binary operators (+, -, &, ^) return a new set and never change their operands.
-// Compound assignment operators (+=, -=, &=, ^=) use the C# 14 instance operator syntax and change the set in place,
+// Binary and unary operators (+, -, &, |, ^, ~) return a new set and never change their operands.
+// Compound assignment operators (+=, -=, &=, |=, ^=) use the C# 14 instance operator syntax and change the set in place,
 // so x += 5 costs the same as x.Add(5). Code compiled with C# 13 or earlier, or written in another .NET language,
 // treats x += 5 as x = x + 5 instead, which gives the same result by copying the set.
+//
+// Two sets are combined with | rather than +. C# ranks & above ^ above |, the same order as set notation and Python,
+// so a | b & c means a | (b & c). C# ranks + above &, so a + b & c would mean (a + b) & c, which surprises readers.
+// + and += are kept for adding a single value or a ValueRange, where precedence does not matter.
 public partial class NumericRange
 {
     /// <summary>
@@ -49,25 +53,6 @@ public partial class NumericRange
     {
         var result = new NumericRange(numericRange);
         result.Add(range);
-        return result;
-    }
-
-    /// <summary>
-    /// Returns a new set that holds every value in either <paramref name="left"/> or <paramref name="right"/>.
-    /// </summary>
-    /// <param name="left">The first set. It is not changed.</param>
-    /// <param name="right">The second set. It is not changed.</param>
-    /// <returns>A new set with the union of both sets.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
-    public static NumericRange operator +(NumericRange left, NumericRange right)
-    {
-        ArgumentNullException.ThrowIfNull(left);
-        ArgumentNullException.ThrowIfNull(right);
-
-        // copy the set with more ranges and add the smaller one to it, which needs fewer insertions
-        var (smaller, larger) = OrderByRangeCount(left, right);
-        var result = new NumericRange(larger);
-        result.UnionWith(smaller);
         return result;
     }
 
@@ -136,6 +121,28 @@ public partial class NumericRange
     }
 
     /// <summary>
+    /// Returns a new set that holds every value in either <paramref name="left"/> or <paramref name="right"/>.
+    /// </summary>
+    /// <remarks>
+    /// Like set notation, <c>|</c> binds more loosely than <c>&amp;</c> and <c>^</c>, so <c>a | b &amp; c</c> means <c>a | (b &amp; c)</c>.
+    /// </remarks>
+    /// <param name="left">The first set. It is not changed.</param>
+    /// <param name="right">The second set. It is not changed.</param>
+    /// <returns>A new set with the union of both sets.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="left"/> or <paramref name="right"/> is <see langword="null"/>.</exception>
+    public static NumericRange operator |(NumericRange left, NumericRange right)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+
+        // copy the set with more ranges and add the smaller one to it, which needs fewer insertions
+        var (smaller, larger) = OrderByRangeCount(left, right);
+        var result = new NumericRange(larger);
+        result.UnionWith(smaller);
+        return result;
+    }
+
+    /// <summary>
     /// Returns a new set that holds the values that are in exactly one of <paramref name="left"/> and <paramref name="right"/>, but not in both.
     /// </summary>
     /// <param name="left">The first set. It is not changed.</param>
@@ -149,6 +156,20 @@ public partial class NumericRange
         var result = new NumericRange(left);
         result.SymmetricExceptWith(right);
         return result;
+    }
+
+    /// <summary>
+    /// Returns a new set that holds every value from 0 to <see cref="ulong.MaxValue"/> that is not in <paramref name="numericRange"/>.
+    /// Same as <see cref="Complement()"/>.
+    /// </summary>
+    /// <param name="numericRange">The set to complement. It is not changed.</param>
+    /// <returns>A new set with the complement.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="numericRange"/> is <see langword="null"/>.</exception>
+    public static NumericRange operator ~(NumericRange numericRange)
+    {
+        ArgumentNullException.ThrowIfNull(numericRange);
+
+        return numericRange.Complement();
     }
 
     /// <summary>
@@ -174,7 +195,7 @@ public partial class NumericRange
     /// </summary>
     /// <param name="numericRange">The set whose values to add.</param>
     /// <exception cref="ArgumentNullException"><paramref name="numericRange"/> is <see langword="null"/>.</exception>
-    public void operator +=(NumericRange numericRange)
+    public void operator |=(NumericRange numericRange)
     {
         UnionWith(numericRange);
     }

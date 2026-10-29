@@ -227,7 +227,7 @@ namespace Test
 
             Assert.That((allowed & requested).ToString(), Is.EqualTo("80,443,8050-8100"));
             Assert.That((requested - allowed).ToString(), Is.EqualTo("3389,8101-8200"));
-            Assert.That((allowed + requested).ToString(), Is.EqualTo("22,80,443,3389,8000-8200"));
+            Assert.That((allowed | requested).ToString(), Is.EqualTo("22,80,443,3389,8000-8200"));
             Assert.That((allowed ^ requested).ToString(), Is.EqualTo("22,3389,8000-8049,8101-8200"));
             Assert.That((allowed + new ValueRange(1, 21)).ToString(), Is.EqualTo("1-22,80,443,8000-8100"));
             Assert.That((allowed - new ValueRange(8000, 8099)).ToString(), Is.EqualTo("22,80,443,8100"));
@@ -235,6 +235,34 @@ namespace Test
             // the operands are never changed
             Assert.That(allowed.ToString(), Is.EqualTo("22,80,443,8000-8100"));
             Assert.That(requested.ToString(), Is.EqualTo("80,443,3389,8050-8200"));
+        }
+
+        [Test]
+        public void UnionOperatorGroupsLikeSetNotation()
+        {
+            var a = NumericRange.Parse("1-10");
+            var b = NumericRange.Parse("20-30");
+            var c = NumericRange.Parse("5-25");
+
+            // & binds tighter than ^, which binds tighter than |, as in set notation and Python
+            Assert.That((a | b & c).ToString(), Is.EqualTo((a | (b & c)).ToString()));
+            Assert.That((a | b & c).ToString(), Is.EqualTo("1-10,20-25"));
+            Assert.That((a | b ^ c).ToString(), Is.EqualTo((a | (b ^ c)).ToString()));
+            Assert.That((a ^ b & c).ToString(), Is.EqualTo((a ^ (b & c)).ToString()));
+            Assert.That((a - b & c).ToString(), Is.EqualTo(((a - b) & c).ToString()));
+        }
+
+        [Test]
+        public void ComplementOperator()
+        {
+            var privileged = NumericRange.Parse("0-1023");
+
+            Assert.That((~privileged).ToString(), Is.EqualTo("1024-18446744073709551615"));
+            Assert.That((~NumericRange.Parse("22,80")).ToString(), Is.EqualTo("0-21,23-79,81-18446744073709551615"));
+            Assert.That((~new NumericRange()).ToString(), Is.EqualTo("0-18446744073709551615"));
+            Assert.That((~NumericRange.Parse("0-18446744073709551615")).IsEmpty, Is.True);
+            Assert.That(~privileged, Is.EqualTo(privileged.Complement()));
+            Assert.That(privileged.ToString(), Is.EqualTo("0-1023"));
         }
 
         [Test]
@@ -265,7 +293,7 @@ namespace Test
             Assert.That(range.ToString(), Is.EqualTo("1-10,20-30"));
             range -= new ValueRange(5, 25);
             Assert.That(range.ToString(), Is.EqualTo("1-4,26-30"));
-            range += NumericRange.Parse("100");
+            range |= NumericRange.Parse("100");
             Assert.That(range.ToString(), Is.EqualTo("1-4,26-30,100"));
             range &= NumericRange.Parse("1-2,28-100");
             Assert.That(range.ToString(), Is.EqualTo("1-2,28-30,100"));
@@ -288,7 +316,8 @@ namespace Test
         {
             var range = NumericRange.Parse("1-5,10");
 
-            Assert.That((range + range).ToString(), Is.EqualTo("1-5,10"));
+            Assert.That((range | range).ToString(), Is.EqualTo("1-5,10"));
+            Assert.That((~~range).ToString(), Is.EqualTo("1-5,10"));
             Assert.That((range & range).ToString(), Is.EqualTo("1-5,10"));
             Assert.That((range - range).IsEmpty, Is.True);
             Assert.That((range ^ range).IsEmpty, Is.True);
@@ -325,8 +354,10 @@ namespace Test
             Assert.Throws<ArgumentNullException>(() => range.IsProperSubsetOf(missing));
             Assert.Throws<ArgumentNullException>(() => range.IsProperSupersetOf(missing));
             Assert.Throws<ArgumentNullException>(() => range.SetEquals(missing));
-            Assert.Throws<ArgumentNullException>(() => _ = range + missing);
-            Assert.Throws<ArgumentNullException>(() => _ = missing + range);
+            Assert.Throws<ArgumentNullException>(() => _ = range | missing);
+            Assert.Throws<ArgumentNullException>(() => _ = missing | range);
+            Assert.Throws<ArgumentNullException>(() => _ = ~missing);
+            Assert.Throws<ArgumentNullException>(() => _ = missing + 5);
             Assert.Throws<ArgumentNullException>(() => _ = range - missing);
             Assert.Throws<ArgumentNullException>(() => _ = missing - range);
             Assert.Throws<ArgumentNullException>(() => _ = range & missing);
@@ -537,7 +568,12 @@ namespace Test
                 var context = $"first = {first}, second = {second}";
 
                 Assert.That((first & second).ToString(), Is.EqualTo(RangeModel.ToRangeString(firstModel.Intersect(secondModel))), context);
-                Assert.That((first + second).ToString(), Is.EqualTo(RangeModel.ToRangeString(firstModel.Union(secondModel))), context);
+                Assert.That((first | second).ToString(), Is.EqualTo(RangeModel.ToRangeString(firstModel.Union(secondModel))), context);
+
+                var domain = new NumericRange { new ValueRange(0, domainSize + 1) };
+                var domainModel = Enumerable.Range(0, domainSize + 2).Select(value => (ulong)value);
+                Assert.That((~first & domain).ToString(), Is.EqualTo(RangeModel.ToRangeString(domainModel.Except(firstModel))), context);
+                Assert.That(~~first, Is.EqualTo(first), context);
                 Assert.That((first - second).ToString(), Is.EqualTo(RangeModel.ToRangeString(firstModel.Except(secondModel))), context);
                 Assert.That((first ^ second).ToString(), Is.EqualTo(RangeModel.ToRangeString(firstModel.Except(secondModel).Union(secondModel.Except(firstModel)))), context);
 

@@ -50,8 +50,9 @@ var requested = NumericRange.Parse("80,443,3389,8050-8200");
 
 var granted = allowed & requested;		// 80,443,8050-8100
 var denied = requested - allowed;		// 3389,8101-8200
-var either = allowed + requested;		// 22,80,443,3389,8000-8200
+var either = allowed | requested;		// 22,80,443,3389,8000-8200
 var onlyOne = allowed ^ requested;		// 22,3389,8000-8049,8101-8200
+var unprivileged = ~NumericRange.Parse("0-1023");	// 1024-18446744073709551615
 
 allowed.Overlaps(requested);			// true
 requested.IsSubsetOf(allowed);			// false
@@ -63,16 +64,19 @@ used.Complement(1024, 65535).Min;		// 1031, the first free port at or above 1024
 ```
 `UnionWith`, `IntersectWith`, `ExceptWith` and `SymmetricExceptWith` change the set in place.
 
+As in set notation and Python, `&` binds tighter than `^`, which binds tighter than `|`, so `a | b & c` means `a | (b & c)`. Difference binds tighter than all three, so `a - b & c` means `(a - b) & c`. Add parentheses whenever the grouping is not obvious.
+
 ## Operators
-`+`, `-`, `&` and `^` return a new set and leave both operands unchanged. `+=`, `-=`, `&=` and `^=` change the set in place without copying it. `+` and `-` accept a value, a `ValueRange` or another set.
+`+`, `-`, `&`, `|`, `^` and `~` return a new set and leave their operands unchanged. `+=`, `-=`, `&=`, `|=` and `^=` change the set in place without copying it. `+` adds a value or a `ValueRange`, `|` combines two sets, and `-` removes a value, a `ValueRange` or another set.
 ```csharp
 var ports = NumericRange.Parse("80,443");
 var withAdmin = ports + 8443;			// ports: 80,443		withAdmin: 80,443,8443
 ports += 22;							// ports: 22,80,443
 ports -= 80;							// ports: 22,443
 ports += new ValueRange(8000, 8100);	// ports: 22,443,8000-8100
+ports |= NumericRange.Parse("3389");	// ports: 22,443,3389,8000-8100
 ```
-In-place `+=`, `-=`, `&=` and `^=` require C# 14 or later. Older compilers treat `x += y` as `x = x + y`, which gives the same result but copies the whole set each time, so it is much slower on large sets.
+In-place `+=`, `-=`, `&=`, `|=` and `^=` require C# 14 or later. Older compilers treat `x += y` as `x = x + y`, which gives the same result but copies the whole set each time, so it is much slower on large sets.
 
 ## Creating sets
 ```csharp
